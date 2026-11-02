@@ -5,30 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Copier pour Odoo</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script src="format.js"></script>
+  <script src="format.js?v=2"></script>
   <style>
     :root { --accent: #714B67; --accent-dark: #5a3b52; --ok: #1e7e34; --err: #b00020; --muted: #666; --border: #ddd; }
     * { box-sizing: border-box; }
     body { margin: 0; padding: 14px; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; color: #222; background: #fff; }
-    h1 { font-size: 15px; margin: 0 0 10px; }
-    button#copy { width: 100%; padding: 11px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
-    button#copy:hover { background: var(--accent-dark); }
-    button#copy:disabled { opacity: .5; cursor: default; }
+    h1 { font-size: 15px; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+    h1 small { font-weight: 400; color: var(--muted); font-size: 11px; }
+    .btn { width: 100%; padding: 11px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn:hover { background: var(--accent-dark); }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .btn.secondary { background: #fff; color: var(--accent); border: 1px solid var(--accent); font-size: 13px; padding: 8px; margin-top: 6px; }
     .opts { margin: 12px 0; display: grid; gap: 6px; }
     .opts label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
-    #status { min-height: 20px; margin: 8px 0; font-weight: 600; }
+    #status { min-height: 20px; margin: 8px 0; font-weight: 600; white-space: pre-wrap; }
     #status.ok { color: var(--ok); }
     #status.err { color: var(--err); }
+    #diag { color: var(--muted); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
     details summary { cursor: pointer; color: var(--muted); }
-    #preview { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; max-height: 340px; overflow: auto; font-size: 12px; }
+    #preview { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; max-height: 340px; overflow: auto; font-size: 12px; user-select: text; }
     #preview img { max-width: 100%; }
     .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h1>Copier pour Odoo</h1>
-  <button id="copy" disabled>Copier le mail</button>
-  <div id="status"></div>
+  <h1>Copier pour Odoo <small>v2</small></h1>
+  <button id="copy" class="btn" disabled>Copier le mail</button>
+  <button id="select" class="btn secondary" disabled>Sélectionner l'aperçu (puis Ctrl+C)</button>
+  <div id="status">Chargement…</div>
 
   <div class="opts">
     <label><input type="checkbox" id="onlyLast" checked> Dernier message uniquement (sans l'historique)</label>
@@ -36,12 +40,13 @@
     <label><input type="checkbox" id="separator" checked> Ligne de séparation ______</label>
   </div>
 
-  <details>
+  <details id="previewBox">
     <summary>Aperçu</summary>
     <div id="preview"></div>
   </details>
 
   <p class="hint">Sélectionne un mail (reçu ou envoyé), clique sur « Copier le mail », puis colle (Ctrl+V) dans la note Odoo. Épingle ce volet (icône punaise) pour qu'il reste ouvert d'un mail à l'autre.</p>
+  <div id="diag"></div>
 
   <script>
     (function () {
@@ -54,6 +59,18 @@
         s.textContent = msg || "";
         s.className = cls || "";
       }
+      function diag(msg) {
+        $("diag").textContent = msg ? "Détail technique : " + msg : "";
+      }
+
+      window.addEventListener("error", function (e) {
+        setStatus("Erreur dans le volet.", "err");
+        diag((e.message || e) + "");
+      });
+
+      if (!window.CopierOdoo) {
+        setStatus("format.js n'a pas pu être chargé.", "err");
+      }
 
       function options() {
         return { onlyLast: $("onlyLast").checked, noImages: $("noImages").checked, separator: $("separator").checked };
@@ -61,84 +78,127 @@
 
       function render() {
         if (!state.meta) return;
-        state.result = CopierOdoo.build(state.meta, state.bodyHtml, document.implementation, options());
-        $("preview").innerHTML = state.result.html;
-        $("copy").disabled = false;
+        try {
+          state.result = CopierOdoo.build(state.meta, state.bodyHtml, document.implementation, options());
+          $("preview").innerHTML = state.result.html;
+          $("copy").disabled = false;
+          $("select").disabled = false;
+        } catch (e) {
+          setStatus("Erreur de mise en forme.", "err");
+          diag(e && e.message);
+        }
       }
 
       function loadItem() {
-        var item = Office.context.mailbox.item;
+        var item = Office.context.mailbox && Office.context.mailbox.item;
         $("copy").disabled = true;
+        $("select").disabled = true;
         state.meta = null;
+        state.result = null;
         $("preview").innerHTML = "";
+        diag("");
         if (!item) { setStatus("Sélectionne un mail.", ""); return; }
         setStatus("Lecture du mail…", "");
-        item.body.getAsync(Office.CoercionType.Html, function (res) {
-          if (res.status !== Office.AsyncResultStatus.Succeeded) {
-            setStatus("Impossible de lire le corps du mail : " + (res.error && res.error.message), "err");
-            return;
-          }
-          state.bodyHtml = res.value || "";
-          state.meta = {
-            from: item.from,
-            to: item.to,
-            cc: item.cc,
-            subject: item.subject,
-            date: item.dateTimeCreated
-          };
-          render();
-          setStatus("", "");
-        });
-      }
-
-      function copyWithEvent(html, text) {
-        var done = false;
-        function onCopy(e) {
-          e.clipboardData.setData("text/html", html);
-          e.clipboardData.setData("text/plain", text);
-          e.preventDefault();
-          done = true;
+        try {
+          item.body.getAsync(Office.CoercionType.Html, function (res) {
+            if (res.status !== Office.AsyncResultStatus.Succeeded) {
+              setStatus("Impossible de lire le corps du mail.", "err");
+              diag(res.error && (res.error.code + " " + res.error.message));
+              return;
+            }
+            state.bodyHtml = res.value || "";
+            state.meta = { from: item.from, to: item.to, cc: item.cc, subject: item.subject, date: item.dateTimeCreated };
+            render();
+            if (state.result) setStatus("Prêt.", "");
+          });
+        } catch (e) {
+          setStatus("Impossible de lire le mail.", "err");
+          diag(e && e.message);
         }
-        document.addEventListener("copy", onCopy);
-        try { document.execCommand("copy"); } catch (e) { /* ignore */ }
-        document.removeEventListener("copy", onCopy);
-        return done;
       }
 
-      function copyWithApi(html, text) {
-        if (!navigator.clipboard || !window.ClipboardItem) return Promise.reject();
-        return navigator.clipboard.write([new ClipboardItem({
-          "text/html": new Blob([html], { type: "text/html" }),
-          "text/plain": new Blob([text], { type: "text/plain" })
-        })]);
-      }
+      // --- Méthodes de copie ---
 
       function selectPreview() {
-        $("preview").parentNode.open = true;
-        var r = document.createRange();
-        r.selectNodeContents($("preview"));
+        $("previewBox").open = true;
+        var range = document.createRange();
+        range.selectNodeContents($("preview"));
         var sel = window.getSelection();
         sel.removeAllRanges();
-        sel.addRange(r);
+        sel.addRange(range);
+        $("preview").focus && $("preview").focus();
+      }
+
+      // Méthode A : execCommand sur une sélection réelle + données forcées via l'événement copy
+      function copyExec(html, text) {
+        var filled = false;
+        function onCopy(e) {
+          if (e.clipboardData) {
+            e.clipboardData.setData("text/html", html);
+            e.clipboardData.setData("text/plain", text);
+            e.preventDefault();
+            filled = true;
+          }
+        }
+        selectPreview();
+        document.addEventListener("copy", onCopy, true);
+        var ok = false;
+        try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+        document.removeEventListener("copy", onCopy, true);
+        window.getSelection().removeAllRanges();
+        return ok && filled ? "execCommand" : (ok ? "execCommand (sélection)" : null);
+      }
+
+      // Méthode B : API Clipboard moderne
+      function copyApi(html, text) {
+        if (!navigator.clipboard) return Promise.reject(new Error("navigator.clipboard absent"));
+        if (window.ClipboardItem && navigator.clipboard.write) {
+          return navigator.clipboard.write([new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([text], { type: "text/plain" })
+          })]).then(function () { return "Clipboard API"; });
+        }
+        return navigator.clipboard.writeText(text).then(function () { return "Clipboard API (texte seul)"; });
+      }
+
+      function success(method) {
+        setStatus("✓ Copié — colle-le dans Odoo (Ctrl+V)", "ok");
+        diag("méthode : " + method);
       }
 
       function copy() {
         if (!state.result) return;
         var html = state.result.html, text = state.result.text;
-        if (copyWithEvent(html, text)) { setStatus("✓ Copié — colle-le dans Odoo (Ctrl+V)", "ok"); return; }
-        copyWithApi(html, text).then(function () {
-          setStatus("✓ Copié — colle-le dans Odoo (Ctrl+V)", "ok");
-        }, function () {
+        var errors = [];
+
+        // A d'abord : synchrone, donc dans le geste utilisateur
+        var m = null;
+        try { m = copyExec(html, text); } catch (e) { errors.push("exec: " + (e && e.message)); }
+        if (m) { success(m); return; }
+        errors.push("execCommand refusé");
+
+        copyApi(html, text).then(success, function (e) {
+          errors.push("API: " + (e && (e.name + " " + e.message)));
           selectPreview();
-          setStatus("Copie automatique bloquée : l'aperçu est sélectionné, fais Ctrl+C.", "err");
+          setStatus("Outlook bloque la copie automatique.\nLe texte est sélectionné dans l'aperçu : fais Ctrl+C, puis Ctrl+V dans Odoo.", "err");
+          diag(errors.join(" | "));
         });
       }
 
-      Office.onReady(function () {
+      Office.onReady(function (info) {
         $("copy").addEventListener("click", copy);
-        ["onlyLast", "noImages", "separator"].forEach(function (id) {
-          $(id).addEventListener("change", function () { render(); setStatus("", ""); });
+        $("select").addEventListener("click", function () {
+          selectPreview();
+          setStatus("Texte sélectionné : fais Ctrl+C, puis Ctrl+V dans Odoo.", "");
         });
+        ["onlyLast", "noImages", "separator"].forEach(function (id) {
+          $(id).addEventListener("change", function () { render(); setStatus("Prêt.", ""); });
+        });
+        if (!Office.context.mailbox) {
+          setStatus("Ouvre ce volet depuis Outlook.", "");
+          diag("hôte : " + (info && info.host));
+          return;
+        }
         if (Office.context.mailbox.addHandlerAsync) {
           Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, loadItem);
         }
