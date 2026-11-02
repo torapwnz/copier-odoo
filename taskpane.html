@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copier pour Odoo</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script src="format.js"></script>
+  <style>
+    :root { --accent: #714B67; --accent-dark: #5a3b52; --ok: #1e7e34; --err: #b00020; --muted: #666; --border: #ddd; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 14px; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; color: #222; background: #fff; }
+    h1 { font-size: 15px; margin: 0 0 10px; }
+    button#copy { width: 100%; padding: 11px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+    button#copy:hover { background: var(--accent-dark); }
+    button#copy:disabled { opacity: .5; cursor: default; }
+    .opts { margin: 12px 0; display: grid; gap: 6px; }
+    .opts label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+    #status { min-height: 20px; margin: 8px 0; font-weight: 600; }
+    #status.ok { color: var(--ok); }
+    #status.err { color: var(--err); }
+    details summary { cursor: pointer; color: var(--muted); }
+    #preview { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; max-height: 340px; overflow: auto; font-size: 12px; }
+    #preview img { max-width: 100%; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Copier pour Odoo</h1>
+  <button id="copy" disabled>Copier le mail</button>
+  <div id="status"></div>
+
+  <div class="opts">
+    <label><input type="checkbox" id="onlyLast" checked> Dernier message uniquement (sans l'historique)</label>
+    <label><input type="checkbox" id="noImages" checked> Retirer les images</label>
+    <label><input type="checkbox" id="separator" checked> Ligne de séparation ______</label>
+  </div>
+
+  <details>
+    <summary>Aperçu</summary>
+    <div id="preview"></div>
+  </details>
+
+  <p class="hint">Sélectionne un mail (reçu ou envoyé), clique sur « Copier le mail », puis colle (Ctrl+V) dans la note Odoo. Épingle ce volet (icône punaise) pour qu'il reste ouvert d'un mail à l'autre.</p>
+
+  <script>
+    (function () {
+      "use strict";
+      var state = { meta: null, bodyHtml: "", result: null };
+      var $ = function (id) { return document.getElementById(id); };
+
+      function setStatus(msg, cls) {
+        var s = $("status");
+        s.textContent = msg || "";
+        s.className = cls || "";
+      }
+
+      function options() {
+        return { onlyLast: $("onlyLast").checked, noImages: $("noImages").checked, separator: $("separator").checked };
+      }
+
+      function render() {
+        if (!state.meta) return;
+        state.result = CopierOdoo.build(state.meta, state.bodyHtml, document.implementation, options());
+        $("preview").innerHTML = state.result.html;
+        $("copy").disabled = false;
+      }
+
+      function loadItem() {
+        var item = Office.context.mailbox.item;
+        $("copy").disabled = true;
+        state.meta = null;
+        $("preview").innerHTML = "";
+        if (!item) { setStatus("Sélectionne un mail.", ""); return; }
+        setStatus("Lecture du mail…", "");
+        item.body.getAsync(Office.CoercionType.Html, function (res) {
+          if (res.status !== Office.AsyncResultStatus.Succeeded) {
+            setStatus("Impossible de lire le corps du mail : " + (res.error && res.error.message), "err");
+            return;
+          }
+          state.bodyHtml = res.value || "";
+          state.meta = {
+            from: item.from,
+            to: item.to,
+            cc: item.cc,
+            subject: item.subject,
+            date: item.dateTimeCreated
+          };
+          render();
+          setStatus("", "");
+        });
+      }
+
+      function copyWithEvent(html, text) {
+        var done = false;
+        function onCopy(e) {
+          e.clipboardData.setData("text/html", html);
+          e.clipboardData.setData("text/plain", text);
+          e.preventDefault();
+          done = true;
+        }
+        document.addEventListener("copy", onCopy);
+        try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+        document.removeEventListener("copy", onCopy);
+        return done;
+      }
+
+      function copyWithApi(html, text) {
+        if (!navigator.clipboard || !window.ClipboardItem) return Promise.reject();
+        return navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" })
+        })]);
+      }
+
+      function selectPreview() {
+        $("preview").parentNode.open = true;
+        var r = document.createRange();
+        r.selectNodeContents($("preview"));
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+
+      function copy() {
+        if (!state.result) return;
+        var html = state.result.html, text = state.result.text;
+        if (copyWithEvent(html, text)) { setStatus("✓ Copié — colle-le dans Odoo (Ctrl+V)", "ok"); return; }
+        copyWithApi(html, text).then(function () {
+          setStatus("✓ Copié — colle-le dans Odoo (Ctrl+V)", "ok");
+        }, function () {
+          selectPreview();
+          setStatus("Copie automatique bloquée : l'aperçu est sélectionné, fais Ctrl+C.", "err");
+        });
+      }
+
+      Office.onReady(function () {
+        $("copy").addEventListener("click", copy);
+        ["onlyLast", "noImages", "separator"].forEach(function (id) {
+          $(id).addEventListener("change", function () { render(); setStatus("", ""); });
+        });
+        if (Office.context.mailbox.addHandlerAsync) {
+          Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, loadItem);
+        }
+        loadItem();
+      });
+    })();
+  </script>
+</body>
+</html>

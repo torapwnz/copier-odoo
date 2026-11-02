@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
+           xsi:type="MailApp">
+  <Id>d9e37b97-2913-43e4-bb9c-49c19d028173</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Connectic</ProviderName>
+  <DefaultLocale>fr-FR</DefaultLocale>
+  <DisplayName DefaultValue="Copier pour Odoo"/>
+  <Description DefaultValue="Copie l'entête et le contenu d'un mail au format historique Outlook, prêt à coller dans Odoo."/>
+  <IconUrl DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-128.png"/>
+  <SupportUrl DefaultValue="https://www.connectic.io"/>
+  <AppDomains>
+    <AppDomain>https://torapwnz.github.io</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Mailbox"/>
+  </Hosts>
+  <Requirements>
+    <Sets>
+      <Set Name="Mailbox" MinVersion="1.5"/>
+    </Sets>
+  </Requirements>
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://torapwnz.github.io/copier-odoo/taskpane.html"/>
+        <RequestedHeight>300</RequestedHeight>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+  <Permissions>ReadItem</Permissions>
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
+  </Rule>
+  <DisableEntityHighlighting>false</DisableEntityHighlighting>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <DesktopFormFactor>
+            <ExtensionPoint xsi:type="MessageReadCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="copierOdooGroup">
+                  <Label resid="GroupLabel"/>
+                  <Control xsi:type="Button" id="copierOdooButton">
+                    <Label resid="ButtonLabel"/>
+                    <Supertip>
+                      <Title resid="ButtonLabel"/>
+                      <Description resid="ButtonTooltip"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="Icon16"/>
+                      <bt:Image size="32" resid="Icon32"/>
+                      <bt:Image size="80" resid="Icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="TaskpaneUrl"/>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+      <Resources>
+        <bt:Images>
+          <bt:Image id="Icon16" DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-16.png"/>
+          <bt:Image id="Icon32" DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-32.png"/>
+          <bt:Image id="Icon80" DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-80.png"/>
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="TaskpaneUrl" DefaultValue="https://torapwnz.github.io/copier-odoo/taskpane.html"/>
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="GroupLabel" DefaultValue="Odoo"/>
+          <bt:String id="ButtonLabel" DefaultValue="Copier pour Odoo"/>
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="ButtonTooltip" DefaultValue="Copie l'entête (De, Envoyé, À, Cc, Objet) et le contenu du mail pour le coller dans une note Odoo."/>
+        </bt:LongStrings>
+      </Resources>
+    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
+        <Requirements><bt:Sets DefaultMinVersion="1.5"><bt:Set Name="Mailbox"/></bt:Sets></Requirements>
+        <Hosts>
+          <Host xsi:type="MailHost">
+            <DesktopFormFactor>
+              <ExtensionPoint xsi:type="MessageReadCommandSurface">
+                <OfficeTab id="TabDefault">
+                  <Group id="copierOdooGroup">
+                    <Label resid="GroupLabel"/>
+                    <Control xsi:type="Button" id="copierOdooButton">
+                      <Label resid="ButtonLabel"/>
+                      <Supertip>
+                        <Title resid="ButtonLabel"/>
+                        <Description resid="ButtonTooltip"/>
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon16"/>
+                        <bt:Image size="32" resid="Icon32"/>
+                        <bt:Image size="80" resid="Icon80"/>
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <SourceLocation resid="TaskpaneUrl"/>
+                      <SupportsPinning>true</SupportsPinning>
+                      </Action>
+                    </Control>
+                  </Group>
+                </OfficeTab>
+              </ExtensionPoint>
+            </DesktopFormFactor>
+          </Host>
+        </Hosts>
+        <Resources>
+          <bt:Images>
+            <bt:Image id="Icon16" DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-16.png"/>
+            <bt:Image id="Icon32" DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-32.png"/>
+            <bt:Image id="Icon80" DefaultValue="https://torapwnz.github.io/copier-odoo/assets/icon-80.png"/>
+          </bt:Images>
+          <bt:Urls>
+            <bt:Url id="TaskpaneUrl" DefaultValue="https://torapwnz.github.io/copier-odoo/taskpane.html"/>
+          </bt:Urls>
+          <bt:ShortStrings>
+            <bt:String id="GroupLabel" DefaultValue="Odoo"/>
+            <bt:String id="ButtonLabel" DefaultValue="Copier pour Odoo"/>
+          </bt:ShortStrings>
+          <bt:LongStrings>
+            <bt:String id="ButtonTooltip" DefaultValue="Copie l'entête (De, Envoyé, À, Cc, Objet) et le contenu du mail pour le coller dans une note Odoo."/>
+          </bt:LongStrings>
+        </Resources>
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>
