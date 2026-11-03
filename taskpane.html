@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Copier pour Odoo</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script src="format.js?v=2"></script>
+  <script src="format.js?v=3"></script>
   <style>
     :root { --accent: #714B67; --accent-dark: #5a3b52; --ok: #1e7e34; --err: #b00020; --muted: #666; --border: #ddd; }
     * { box-sizing: border-box; }
@@ -29,13 +29,14 @@
   </style>
 </head>
 <body>
-  <h1>Copier pour Odoo <small>v2</small></h1>
+  <h1>Copier pour Odoo <small>v3</small></h1>
   <button id="copy" class="btn" disabled>Copier le mail</button>
   <button id="select" class="btn secondary" disabled>Sélectionner l'aperçu (puis Ctrl+C)</button>
   <div id="status">Chargement…</div>
 
   <div class="opts">
     <label><input type="checkbox" id="onlyLast" checked> Dernier message uniquement (sans l'historique)</label>
+    <label><input type="checkbox" id="noSignature" checked> Retirer la signature (garde la formule de politesse et le nom)</label>
     <label><input type="checkbox" id="noImages" checked> Retirer les images</label>
     <label><input type="checkbox" id="separator" checked> Ligne de séparation ______</label>
   </div>
@@ -72,8 +73,22 @@
         setStatus("format.js n'a pas pu être chargé.", "err");
       }
 
+      var OPTION_IDS = ["onlyLast", "noSignature", "noImages", "separator"];
+      var PREF_KEY = "copierOdoo.options";
+
       function options() {
-        return { onlyLast: $("onlyLast").checked, noImages: $("noImages").checked, separator: $("separator").checked };
+        var o = {};
+        OPTION_IDS.forEach(function (id) { o[id] = $(id).checked; });
+        return o;
+      }
+      function saveOptions() {
+        try { localStorage.setItem(PREF_KEY, JSON.stringify(options())); } catch (e) { /* ignore */ }
+      }
+      function restoreOptions() {
+        try {
+          var o = JSON.parse(localStorage.getItem(PREF_KEY) || "null");
+          if (o) OPTION_IDS.forEach(function (id) { if (typeof o[id] === "boolean") $(id).checked = o[id]; });
+        } catch (e) { /* ignore */ }
       }
 
       function render() {
@@ -191,8 +206,9 @@
           selectPreview();
           setStatus("Texte sélectionné : fais Ctrl+C, puis Ctrl+V dans Odoo.", "");
         });
-        ["onlyLast", "noImages", "separator"].forEach(function (id) {
-          $(id).addEventListener("change", function () { render(); setStatus("Prêt.", ""); });
+        restoreOptions();
+        OPTION_IDS.forEach(function (id) {
+          $(id).addEventListener("change", function () { saveOptions(); render(); setStatus("Prêt.", ""); });
         });
         if (!Office.context.mailbox) {
           setStatus("Ouvre ce volet depuis Outlook.", "");

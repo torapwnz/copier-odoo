@@ -80,18 +80,49 @@
     return !!(a.compareDocumentPosition(b) & 4);
   }
 
-  function findHistoryStart(body) {
-    var best = null;
-    var bySel = body.querySelector(HISTORY_SELECTORS.join(","));
-    if (bySel) best = bySel;
+  var FROM_LINE_RE = /^(De|From|Van|Von)\s*:/i;
+  var SENT_LINE_RE = /^(Envoy[ée]|Sent|Date|Verzonden|Gesendet)\s*:/i;
 
+  // Remonte au plus haut ancêtre qui commence par ce nœud (sans englober du contenu placé avant)
+  function blockOf(node, body) {
+    var n = node;
+    while (n.parentNode && n.parentNode !== body) {
+      var first = n.parentNode.firstChild;
+      while (first && first !== n && isEmptyNode(first) && !(first.nodeType === 1 && first.tagName.toLowerCase() === "br")) first = first.nextSibling;
+      if (first !== n) break;
+      n = n.parentNode;
+    }
+    return n;
+  }
+
+  function findHistoryStart(body) {
+    var best = body.querySelector(HISTORY_SELECTORS.join(",")) || null;
+
+    // Entête cité dans un seul bloc ("De : …<br>Envoyé : …")
     var candidates = body.querySelectorAll("p, div, span, font");
     for (var i = 0; i < candidates.length; i++) {
       var el = candidates[i];
       if (best && !isBefore(el, best)) break; // on ne cherche que plus haut
       var txt = el.textContent || "";
-      if (HEADER_TEXT_RE.test(txt) || ORIGINAL_RE.test(txt)) {
-        best = el;
+      if (HEADER_TEXT_RE.test(txt) || ORIGINAL_RE.test(txt)) { best = el; break; }
+    }
+
+    // Entête cité sur plusieurs blocs (une ligne par <div>/<p>)
+    var lines = collectLines(body, best);
+    var seenContent = false;
+    for (var k = 0; k < lines.length; k++) {
+      var t = lines[k].text;
+      if (!seenContent) {
+        // un entête tout en haut (avant tout contenu) n'est pas de l'historique
+        if (!/^_{5,}$/.test(t) && !FROM_LINE_RE.test(t) && !SENT_LINE_RE.test(t) && !/^(À|To|Aan|An|Cc|Objet|Subject|Onderwerp|Betreff)\s*:/i.test(t)) seenContent = true;
+        continue;
+      }
+      var isHeader = FROM_LINE_RE.test(t) &&
+        ((lines[k + 1] && SENT_LINE_RE.test(lines[k + 1].text)) || (lines[k + 2] && SENT_LINE_RE.test(lines[k + 2].text)));
+      if (isHeader || ORIGINAL_RE.test(t)) {
+        var startLine = (k > 0 && /^_{5,}$/.test(lines[k - 1].text)) ? lines[k - 1] : lines[k];
+        var blk = blockOf(startLine.nodes[0], body);
+        if (blk && (!best || isBefore(blk, best))) best = blk;
         break;
       }
     }
@@ -124,7 +155,116 @@
     trimTrailing(body);
   }
 
-  // Nettoie le HTML du mail. options.onlyLast : retire l'historique ; options.noImages : retire les images.
+  // --- Suppression de la signature ---
+
+  // Formules de politesse (ligne entière, courte)
+  var CLOSING_RE = new RegExp("^(" + [
+    "(best|kind|warm|warmest|many thanks and( best)?|with( best| kind)?)?\\s*regards",
+    "(bien |très )?cordialement",
+    "bien (à|a) (vous|toi)", "b[àa]v",
+    "bonne (journée|soirée|fin de journée|semaine)",
+    "(sincères |meilleures )?salutations( distinguées)?",
+    "merci( beaucoup| d'avance| par avance| et bonne journée| pour ton retour| pour votre retour)?",
+    "thanks?( you| in advance| a lot)?", "many thanks", "cheers", "(yours )?sincerely",
+    "(met )?vriendelijke groet(en)?", "mvg", "groeten",
+    "mit freundlichen grü(ß|ss)en", "viele grü(ß|ss)e",
+    "à bientôt", "a\\+"
+  ].join("|") + ")\\s*[,.!]*$", "i");
+
+  var SIGNATURE_SELECTORS = [
+    "#Signature", "#signature", "[id^='Signature']", "[id^='x_Signature']",
+    "div.signature", ".gmail_signature", "[data-smartmail='gmail_signature']",
+    ".moz-signature", "#ms-outlook-mobile-signature", "a[name='_MailAutoSig']"
+  ];
+
+  var LINE_BLOCK = /^(p|div|h[1-6]|li|tr|td|th|table|tbody|thead|blockquote|ul|ol|pre|section|article|header|footer)$/i;
+
+  function norm(s) {
+    return (s || "").replace(/ /g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  // Découpe le contenu (jusqu'à `bound` exclu) en lignes de nœuds texte
+  function collectLines(body, bound) {
+    var lines = [[]];
+    var stop = false;
+    function brk() { if (lines[lines.length - 1].length) lines.push([]); }
+    function walk(n) {
+      if (stop) return;
+      if (n === bound) { stop = true; return; }
+      if (n.nodeType === 3) { lines[lines.length - 1].push(n); return; }
+      if (n.nodeType !== 1) return;
+      var tag = n.tagName.toLowerCase();
+      if (tag === "br") { brk(); return; }
+      var block = LINE_BLOCK.test(tag);
+      if (block) brk();
+      for (var c = n.firstChild; c && !stop; c = c.nextSibling) walk(c);
+      if (block) brk();
+    }
+    for (var c = body.firstChild; c && !stop; c = c.nextSibling) walk(c);
+    return lines
+      .map(function (nodes) {
+        return { nodes: nodes, text: norm(nodes.map(function (t) { return t.nodeValue; }).join("")) };
+      })
+      .filter(function (l) { return l.text; });
+  }
+
+  function looksLikeName(t) {
+    return t.length <= 40 && !/[0-9@|:/]/.test(t) && !/https?|www\./i.test(t) && t.split(" ").length <= 5;
+  }
+
+  function deleteRange(doc, startNode, startAfter, body, bound) {
+    var r = doc.createRange();
+    if (startAfter) r.setStartAfter(startNode); else r.setStartBefore(startNode);
+    if (bound && body.contains(bound)) r.setEndBefore(bound);
+    else r.setEnd(body, body.childNodes.length);
+    r.deleteContents();
+  }
+
+  // Retire la signature du premier message (avant `bound` = début de l'historique).
+  // Garde la formule de politesse et le nom ; retire titre, téléphone, adresse, logos, bannières…
+  function removeSignature(doc, body, bound) {
+    var lines = collectLines(body, bound);
+
+    // 1. Dernière formule de politesse
+    var idx = -1;
+    for (var i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].text.length <= 50 && CLOSING_RE.test(lines[i].text)) { idx = i; break; }
+    }
+    if (idx >= 0) {
+      var closing = lines[idx];
+      var last = closing.nodes[closing.nodes.length - 1];
+      var next = lines[idx + 1];
+      var name = next && looksLikeName(next.text) ? next.text : null;
+      deleteRange(doc, last, true, body, bound);
+      if (name && last.parentNode) {
+        var br = doc.createElement("br");
+        var nameNode = doc.createTextNode(name);
+        last.parentNode.insertBefore(br, last.nextSibling);
+        br.parentNode.insertBefore(nameNode, br.nextSibling);
+        if (nameNode.nextSibling) nameNode.parentNode.insertBefore(doc.createElement("br"), nameNode.nextSibling);
+      }
+      return "politesse";
+    }
+
+    // 2. Signature balisée par le client mail
+    var marker = body.querySelector(SIGNATURE_SELECTORS.join(","));
+    if (marker && (!bound || isBefore(marker, bound))) {
+      deleteRange(doc, marker, false, body, bound);
+      return "balise";
+    }
+
+    // 3. Séparateur standard "-- "
+    for (var j = lines.length - 1; j >= 0; j--) {
+      if (lines[j].text === "--") {
+        deleteRange(doc, lines[j].nodes[0], false, body, bound);
+        return "séparateur";
+      }
+    }
+    return null;
+  }
+
+  // Nettoie le HTML du mail. options.onlyLast : retire l'historique ; options.noImages : retire les images ;
+  // options.noSignature : retire la signature du dernier message.
   function cleanBody(doc, options) {
     var body = doc.body;
     var junk = body.querySelectorAll("script, style, meta, link, title, xml, iframe, frame, object, embed, form, input, button, textarea, select, svg, math, base");
@@ -142,6 +282,17 @@
           all[k].removeAttribute(attrs[a].name);
         }
       }
+    }
+
+    if (options.noSignature) {
+      var bound = findHistoryStart(body);
+      var before = body.innerHTML;
+      try {
+        removeSignature(doc, body, bound && bound !== body ? bound : null);
+      } catch (e) {
+        body.innerHTML = before;
+      }
+      if (!/\S/.test((body.textContent || "").replace(/ /g, " "))) body.innerHTML = before; // sécurité
     }
 
     if (options.onlyLast) {

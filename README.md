@@ -18,8 +18,11 @@ Il suffit ensuite de faire **Ctrl+V** dans la note Odoo (mise en forme conservé
 
 Options dans le volet :
 - **Dernier message uniquement** (coché par défaut) : retire l'historique cité sous le message.
-- **Retirer les images** (coché par défaut) : enlève logos et signatures.
+- **Retirer la signature** (coché par défaut) : garde la formule de politesse et le nom, retire titre, téléphone, adresse, logos, bannières.
+- **Retirer les images** (coché par défaut) : enlève les images restantes (captures, logos).
 - **Ligne de séparation** : la ligne `______` au-dessus de l'entête.
+
+Les cases cochées sont mémorisées d'une ouverture à l'autre.
 
 Le complément ne fait que **lire** le mail sélectionné (permission `ReadItem`). Rien n'est envoyé ailleurs.
 
